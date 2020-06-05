@@ -1,0 +1,54 @@
+{
+  "table": {
+    "namespace": "lidong",
+    "name": "test"
+  },
+  "rowkey": "id",
+  "columns": {
+    "id": {
+      "cf": "rowkey",
+      "col": "id",
+      "type": "long"
+    },
+    "name": {
+      "cf": "columns",
+      "col": "name",
+      "type": "string"
+    },
+    "alive": {
+      "cf": "columns",
+      "col": "alive",
+      "type": "boolean"
+    },
+    "age": {
+      "cf": "columns",
+      "col": "age",
+      "type": "int"
+    },
+    "birthDateStr": {
+      "cf": "columns",
+      "col": "birthDateStr",
+      "type": "string"
+    },
+    "birthDateTime": {
+      "cf": "columns",
+      "col": "birthDateTime",
+      "type": "timestamp"
+    },
+    "birthDate": {
+      "cf": "columns",
+      "col": "birthDate",
+      "type": "date"
+    },
+    "height": {
+      "cf": "columns",
+      "col": "height",
+      "type": "double"
+    },
+    "b": {
+      "cf": "columns",
+      "col": "b",
+      "type": "byte"
+    }
+  }
+}
