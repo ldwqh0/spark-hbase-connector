@@ -58,7 +58,7 @@ case class HbaseDataSourceReader private(options: DataSourceOptions,
    * @return
    */
   override def pushFilters(filters: Array[Filter]): Array[Filter] = {
-    var unsupportedFilters: ArrayBuffer[Filter] = ArrayBuffer()
+    val unsupportedFilters: ArrayBuffer[Filter] = ArrayBuffer()
     // 算子下推,将大于，小于等于等算子下推到hbase查询逻辑
     filters.foreach {
       //      case f:StringContains=>

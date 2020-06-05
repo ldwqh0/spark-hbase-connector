@@ -35,7 +35,7 @@ case class HbaseInputPartitionReader(connection: Connection,
                                     ) extends InputPartitionReader[InternalRow] {
 
   // 定义一个变量，用于处理处理的结果集
-  var scannerIterator = getScanner().iterator()
+  val scannerIterator = getScanner().iterator()
 
   override def next(): Boolean = {
     scannerIterator.hasNext
