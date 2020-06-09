@@ -11,10 +11,10 @@ import scala.collection.JavaConverters._
 object TestDataWriter {
   def main(args: Array[String]): Unit = {
     val configuration = HBaseConfiguration.create
-    configuration.set(HConstants.ZOOKEEPER_QUORUM, "dm105,dm106,dm107")
+    configuration.set(HConstants.ZOOKEEPER_QUORUM, "ubuntu3")
     val connection = ConnectionFactory.createConnection(configuration);
     val table: Table = connection.getTable(TableName.valueOf("lidong:test"))
-    //    writeData(table)
+    writeData(table)
     readData(table)
     connection.close()
   }

@@ -2,8 +2,6 @@ package com.dm.hbase.spark.datasource
 
 import java.util
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.scala.{DefaultScalaModule, ScalaObjectMapper}
 import org.apache.hadoop.hbase.HConstants
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources._
@@ -41,7 +39,7 @@ case class HbaseDataSourceReader private(options: DataSourceOptions,
     Seq[InputPartition[InternalRow]](HbaseInputPartition(Map(
       HConstants.ZOOKEEPER_QUORUM -> options.get(HConstants.ZOOKEEPER_QUORUM).orElse("localhost"),
       HConstants.ZOOKEEPER_CLIENT_PORT -> options.get(HConstants.ZOOKEEPER_CLIENT_PORT).orElse("2181")
-    ), name, rowkey, columns, requiredSchema, pushedFilters())).asJava
+    ), name, rowkey, columns, requiredSchema, pushedFilters)).asJava
   }
 
 
@@ -90,9 +88,6 @@ case class HbaseDataSourceReader private(options: DataSourceOptions,
 }
 
 object HbaseDataSourceReader {
-  val mapper = new ObjectMapper() with ScalaObjectMapper
-  mapper.registerModule(DefaultScalaModule)
-
   /**
    * 构造一个 HbaseDataSourceReader实例
    *
@@ -101,7 +96,7 @@ object HbaseDataSourceReader {
    */
   def apply(options: DataSourceOptions): HbaseDataSourceReader = {
     // 读取数据的结构定义
-    val tableCatalog = mapper.readValue[HbaseTable](options.get(HbaseTable.catalog).get())
+    val tableCatalog = HbaseTable(options.get(HbaseTable.catalog).get())
     val fields: Array[StructField] = tableCatalog.columns.map(columnEntry => {
       val (name, column) = columnEntry
       val nullable = !HbaseTable.rowkey.equals(column.columnFamily)

@@ -87,10 +87,13 @@ object ScalaDatasourceTest {
     // to_timestamp 将字符串转化为日期时间格式，不会丢失时间信息
     val all = session.sql(
       """select id,name,alive,age,birthDateStr,birthDateTime,birthDate,height,b,c from test
-        |where name like "people1%"
+        |where id in (1,2,3,4,5) or name='people1'
         |""".stripMargin)
     // 显示执行计划
     all.explain(true)
+    //    all.write.text("d:\\r.txt")
+    //    all.write.jdbc()
+    //    all.write.json("hdfs://ubuntu3:9000/test/result.json")
     all.foreach((row: Row) => println(
       s"""{
          |  "id":"${row(0)}",
@@ -104,5 +107,9 @@ object ScalaDatasourceTest {
          |  "b":"${row(8)}",
          |  "c":":${row(9)}"
          |}""".stripMargin))
+    val count = session.sql("""select name from test""")
+
+    //    count.write.text("hdfs://ubuntu3:9000/test/result.txt")
+    count.foreach(v => println(v))
   }
 }

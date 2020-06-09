@@ -2,9 +2,10 @@ package com.dm.hbase.spark.datasource
 
 import java.sql.{Date, Timestamp}
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.hbase.client._
 import org.apache.hadoop.hbase.filter.FilterList.Operator
-import org.apache.hadoop.hbase.filter.{Filter => _, _}
+import org.apache.hadoop.hbase.filter.{NullComparator, Filter => _, _}
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.hadoop.hbase.{CompareOperator, HBaseConfiguration, HConstants, TableName}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -44,24 +45,45 @@ case class HbaseInputPartitionReader(connection: Connection,
   override def get(): InternalRow = {
     val current: Result = scannerIterator.next()
     InternalRow(requiredSchema.fields.map(field => {
-      val bytes: Array[Byte] = readValue(current, field)
+      /**
+       *
+       * 读取值并应用转换
+       * 对读取的值要进行的操作
+       *
+       * @param func 要应用的转换
+       * @tparam R
+       * @return
+       */
+      def readValue[R >: Null](func: Array[Byte] => R): R = {
+        val columnFamily: String = field.metadata.getString(HbaseTable.columnFamily)
+        // 如果列所在的列族是rowkey
+        if (HbaseTable.rowkey.equals(columnFamily)) {
+          // 返回rowkey
+          func(current.getRow)
+        } else {
+          val column: String = field.metadata.getString(HbaseTable.column)
+          val bytes = current.getValue(Bytes.toBytes(columnFamily), Bytes.toBytes(column))
+          if (bytes == null) null else func(bytes)
+        }
+      }
+
       field.dataType match {
         // case ArrayType => null;
-        case DataTypes.BinaryType => bytes
-        case DataTypes.BooleanType => Bytes.toBoolean(bytes)
-        case DataTypes.ByteType => bytes(0)
+        case DataTypes.BinaryType => readValue(v => v)
+        case DataTypes.BooleanType => readValue(Bytes.toBoolean)
+        case DataTypes.ByteType => readValue(_ (0)) //待测试
         // ase DataTypes.CalendarIntervalType => bytes; //TODO 这种类型不明白
         // 从毫秒数获取日期
-        case DataTypes.DateType => DateTimeUtils.fromJavaDate(new Date(Bytes.toLong(bytes)))
-        case DataTypes.ShortType => Bytes.toShort(bytes)
-        case DataTypes.IntegerType => Bytes.toInt(bytes)
-        case DataTypes.LongType => Bytes.toLong(bytes)
+        case DataTypes.DateType => readValue(v => DateTimeUtils.fromJavaDate(new Date(Bytes.toLong(v))))
+        case DataTypes.ShortType => readValue(Bytes.toShort)
+        case DataTypes.IntegerType => readValue(Bytes.toInt)
+        case DataTypes.LongType => readValue(Bytes.toLong)
         case DataTypes.NullType => null //TODO 这个待验证
-        case DataTypes.FloatType => Bytes.toFloat(bytes)
-        case DataTypes.DoubleType => Bytes.toDouble(bytes)
-        case DataTypes.StringType => UTF8String.fromBytes(bytes)
+        case DataTypes.FloatType => readValue(Bytes.toFloat)
+        case DataTypes.DoubleType => readValue(Bytes.toDouble)
+        case DataTypes.StringType => readValue(UTF8String.fromBytes)
         // 从毫秒数获取时间
-        case DataTypes.TimestampType => DateTimeUtils.fromMillis(Bytes.toLong(bytes)) //日期怎么处理
+        case DataTypes.TimestampType => readValue(v => DateTimeUtils.fromMillis(Bytes.toLong(v))) //日期怎么处理
       }
     }): _*)
   }
@@ -73,137 +95,96 @@ case class HbaseInputPartitionReader(connection: Connection,
   // 计算过滤器
   private def getScanner() = {
     val scan: Scan = new Scan()
-    val filter = new FilterList(filters.map(f => buildFilter(f)).filter(i => i != null && !i.isInstanceOf[Unit]).toList.asJava)
+    val filter = new FilterList(filters.map(buildFilter(_)).filter(i => i != null && !i.isInstanceOf[Unit]).toList.asJava)
     scan.setFilter(filter)
     connection.getTable(TableName.valueOf(name)).getScanner(scan)
   }
 
+  private def buildFilter(sparkFilter: Filter): org.apache.hadoop.hbase.filter.Filter = {
+    // 将字面值转换为对应的Hbase字节数组
+    def toBytes(value: Any): Array[Byte] = value match {
+      case v: Boolean => Bytes.toBytes(v)
+      case v: Byte => Bytes.toBytes(v)
+      case v: Short => Bytes.toBytes(v)
+      case v: Int => Bytes.toBytes(v)
+      case v: Long => Bytes.toBytes(v)
+      case v: Float => Bytes.toBytes(v)
+      case v: Double => Bytes.toBytes(v)
+      case v: String => Bytes.toBytes(v)
+      case v: Date => Bytes.toBytes(v.getTime)
+      case v: Timestamp => Bytes.toBytes(v.getTime)
+      case v@_ => throw new RuntimeException(s"Unsupported value $value")
+    }
 
-  private def buildFilter(sparkFilter: Filter): org.apache.hadoop.hbase.filter.Filter = sparkFilter match {
-    case EqualTo(attribute, value) => buildFilter(attribute, value, CompareOperator.EQUAL)
-    // column like '%value'
-    case StringStartsWith(attribute, value) => {
+    /**
+     * 构建用值做比较的filter
+     *
+     * @param attribute
+     * @param value
+     * @param operator
+     * @return
+     */
+    def buildValueComparatorFilter(attribute: String, operator: CompareOperator, value: Any): org.apache.hadoop.hbase.filter.Filter = {
+      builderByteArrayFilter(attribute, operator, new BinaryComparator(toBytes(value)))
+    }
+
+    // 构建filter
+    def builderByteArrayFilter(attribute: String, operator: CompareOperator, comparator: ByteArrayComparable): org.apache.hadoop.hbase.filter.Filter = {
       if (rowkey.equals(attribute)) {
-        new RowFilter(CompareOperator.EQUAL, new BinaryPrefixComparator(toBytes(value)))
+        new RowFilter(operator, comparator)
       } else {
-        val HBaseTableColumn(columnFamily, column, dataType) = columns.get(attribute).get
-        new SingleColumnValueFilter(Bytes.toBytes(columnFamily), Bytes.toBytes(column), CompareOperator.EQUAL, new BinaryPrefixComparator(toBytes(value)))
+        buildSingleColumnValueFilter(attribute, operator, comparator)
       }
     }
-    // column like "%str%"
-    case StringContains(attribute, value) => {
-      if (rowkey.equals(attribute)) {
-        new RowFilter(CompareOperator.EQUAL, new SubstringComparator(value))
-      } else {
-        val HBaseTableColumn(columnFamily, column, dataType) = columns.get(attribute).get
-        val filter: SingleColumnValueFilter = new SingleColumnValueFilter(Bytes.toBytes(columnFamily), Bytes.toBytes(column), CompareOperator.EQUAL, new SubstringComparator(value));
-        filter
+
+    /**
+     * 创建列值过滤器
+     *
+     * @param attribute 要过滤的列值
+     * @param operator  比较操作符
+     * @return
+     */
+    def buildSingleColumnValueFilter(attribute: String, operator: CompareOperator, comparator: ByteArrayComparable): org.apache.hadoop.hbase.filter.SingleColumnValueFilter = {
+      columns.get(attribute)
+        .map(v => {
+          val HBaseTableColumn(columnFamily, column, dataType) = v
+          val filter = new SingleColumnValueFilter(Bytes.toBytes(columnFamily), Bytes.toBytes(column), operator, comparator)
+          // 如果没有找到指定的列，不返回该行
+          filter.setFilterIfMissing(true)
+          filter
+        }) match {
+        case Some(v: SingleColumnValueFilter) => v
+        case _ => throw new RuntimeException("error")
       }
     }
-    // in (v1,v2,v3)
-    case In(attribute, values) => {
-      if (rowkey.equals(attribute)) {
-        val filters: Array[org.apache.hadoop.hbase.filter.Filter] = values.map(v => new RowFilter(CompareOperator.EQUAL, new BinaryComparator(toBytes(v))))
-        new FilterList(Operator.MUST_PASS_ONE, filters: _*);
-        // 这个语法会报错 new FilterListWithOR(filters.toList.asJava);
-      } else {
-        val filters = values.map(value => buildSingleColumnValueFilter(attribute, CompareOperator.EQUAL, value))
-        new FilterList(Operator.MUST_PASS_ONE, filters: _*)
+
+    sparkFilter match {
+      case EqualTo(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.EQUAL, value)
+      // column like '%value'
+      case StringStartsWith(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new BinaryPrefixComparator(toBytes(value)))
+      // column like "%str%"
+      case StringContains(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new SubstringComparator(value))
+      // in (v1,v2,v3)
+      case In(attribute, values) => new FilterList(Operator.MUST_PASS_ONE, values.map(buildValueComparatorFilter(attribute, CompareOperator.EQUAL, _)): _*);
+      // column is null
+      case IsNull(attribute) => {
+        val filter = buildSingleColumnValueFilter(attribute, CompareOperator.EQUAL, new NullComparator());
+        filter.setFilterIfMissing(false); // 当指定的该列不存在时，会返回
+        filter;
       }
-    }
-    // column is null
-    case IsNull(attribute) => {
-      val HBaseTableColumn(columnFamily, column, dataType) = columns.get(attribute).get
-      val filter: SingleColumnValueFilter = new SingleColumnValueFilter(toBytes(columnFamily), toBytes(column), CompareOperator.EQUAL, new NullComparator());
-      filter.setFilterIfMissing(false); // 当指定的该列不存在时，会返回
-      filter;
-    }
-    // column is not null
-    case IsNotNull(attribute) => {
-      val HBaseTableColumn(columnFamily, column, dataType) = columns.get(attribute).get
-      val filter: SingleColumnValueFilter = new SingleColumnValueFilter(toBytes(columnFamily), toBytes(column), CompareOperator.NOT_EQUAL, new NullComparator());
-      filter.setFilterIfMissing(true);
-      filter;
-    }
-    // column < v
-    case LessThan(attribute, value) => buildFilter(attribute, value, CompareOperator.LESS)
-    // column <= v
-    case LessThanOrEqual(attribute, value) => buildFilter(attribute, value, CompareOperator.LESS_OR_EQUAL)
-    // column > v
-    case GreaterThan(attribute, value) => buildFilter(attribute, value, CompareOperator.GREATER)
-    // column >=
-    case GreaterThanOrEqual(attribute, value) => buildFilter(attribute, value, CompareOperator.GREATER_OR_EQUAL)
-    // and和or待处理
-    case And(left, right) => new FilterList(Operator.MUST_PASS_ALL, buildFilter(left), buildFilter(right))
-    case Or(left, right) => new FilterList(Operator.MUST_PASS_ONE, buildFilter(left), buildFilter(right))
-  }
-
-
-  /**
-   * 构建过滤器
-   *
-   * @param attribute
-   * @param value
-   * @param operator
-   * @return
-   */
-  private def buildFilter(attribute: String, value: Any, operator: CompareOperator): org.apache.hadoop.hbase.filter.Filter = {
-    if (rowkey.equals(attribute)) {
-      new RowFilter(operator, new BinaryComparator(toBytes(value)))
-    } else {
-      // 构建值过滤器
-      buildSingleColumnValueFilter(attribute, operator, value)
-    }
-  }
-
-  /**
-   * 创建列值过滤器
-   *
-   * @param attribute 要过滤的列值
-   * @param operator  比较操作符
-   * @param value     要过滤的值
-   * @return
-   */
-  private def buildSingleColumnValueFilter(attribute: String, operator: CompareOperator, value: Any): org.apache.hadoop.hbase.filter.Filter = {
-    val HBaseTableColumn(columnFamily, column, dataType) = columns.get(attribute).get
-    val filter = new SingleColumnValueFilter(Bytes.toBytes(columnFamily), Bytes.toBytes(column), operator, new BinaryComparator(toBytes(value)))
-    // 如果没有找到指定的列，不返回该行
-    filter.setFilterIfMissing(true)
-    filter.setLatestVersionOnly(true)
-    filter
-  }
-
-  // 将字面值转换为对应的Hbase字节数组
-  private def toBytes(value: Any): Array[Byte] = value match {
-    case v: Boolean => Bytes.toBytes(v)
-    case v: Byte => Bytes.toBytes(v)
-    case v: Short => Bytes.toBytes(v)
-    case v: Int => Bytes.toBytes(v)
-    case v: Long => Bytes.toBytes(v)
-    case v: Float => Bytes.toBytes(v)
-    case v: Double => Bytes.toBytes(v)
-    case v: String => Bytes.toBytes(v)
-    case v: Date => Bytes.toBytes(v.getTime)
-    case v: Timestamp => Bytes.toBytes(v.getTime)
-    case v@_ => throw new RuntimeException(s"Unsupported value $value")
-  }
-
-  /**
-   * 读取当前数据
-   *
-   * @param result
-   * @param field
-   * @return
-   */
-  private def readValue(result: Result, field: StructField): Array[Byte] = {
-    val columnFamily: String = field.metadata.getString(HbaseTable.columnFamily)
-    // 如果列所在的列族是rowkey
-    if (HbaseTable.rowkey.equals(columnFamily)) {
-      // 返回rowkey
-      result.getRow
-    } else {
-      val column: String = field.metadata.getString(HbaseTable.column)
-      result.getValue(Bytes.toBytes(columnFamily), Bytes.toBytes(column))
+      // column is not null
+      case IsNotNull(attribute) => buildSingleColumnValueFilter(attribute, CompareOperator.NOT_EQUAL, new NullComparator())
+      // column < v
+      case LessThan(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.LESS, value)
+      // column <= v
+      case LessThanOrEqual(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.LESS_OR_EQUAL, value)
+      // column > v
+      case GreaterThan(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.GREATER, value)
+      // column >=
+      case GreaterThanOrEqual(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.GREATER_OR_EQUAL, value)
+      // and和or待处理
+      case And(left, right) => new FilterList(Operator.MUST_PASS_ALL, buildFilter(left), buildFilter(right))
+      case Or(left, right) => new FilterList(Operator.MUST_PASS_ONE, buildFilter(left), buildFilter(right))
     }
   }
 }
@@ -216,8 +197,14 @@ object HbaseInputPartitionReader {
             requiredSchema: StructType,
             filters: Array[Filter]): HbaseInputPartitionReader = {
     val configuration = HBaseConfiguration.create
-    configuration.set(HConstants.ZOOKEEPER_QUORUM, options(HConstants.ZOOKEEPER_QUORUM))
-    configuration.set(HConstants.ZOOKEEPER_CLIENT_PORT, options(HConstants.ZOOKEEPER_CLIENT_PORT))
+    val zookeeperQuorum = options(HConstants.ZOOKEEPER_QUORUM)
+    val zookeeperClientPort = options(HConstants.ZOOKEEPER_CLIENT_PORT)
+    if (StringUtils.isNotEmpty(zookeeperQuorum)) {
+      configuration.set(HConstants.ZOOKEEPER_QUORUM, options(HConstants.ZOOKEEPER_QUORUM))
+    }
+    if (StringUtils.isNotEmpty(zookeeperClientPort)) {
+      configuration.set(HConstants.ZOOKEEPER_CLIENT_PORT, options(HConstants.ZOOKEEPER_CLIENT_PORT))
+    }
     val cnn = ConnectionFactory.createConnection(configuration);
     HbaseInputPartitionReader(cnn, name, rowkey, columns, requiredSchema, filters)
   }
