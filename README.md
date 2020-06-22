@@ -1,4 +1,4 @@
-基于Spark 2.4.x的
-一个基于DatasourceV2 的hbase-spark数据源  
+基于Spark 3.0.0的
+spark hbase connector
 数据源暂时只实现了数据读取  
 实现了一些算子的下推
