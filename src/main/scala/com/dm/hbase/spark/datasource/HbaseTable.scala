@@ -76,7 +76,6 @@ object HbaseTable {
   val rowkey: String = "rowkey"
   val columnFamily: String = "columnFamily"
   val column: String = "column"
-
   val mapper = new ObjectMapper() with ScalaObjectMapper
   mapper.registerModule(DefaultScalaModule)
 

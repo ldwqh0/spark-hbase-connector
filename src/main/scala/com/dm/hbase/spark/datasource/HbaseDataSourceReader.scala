@@ -2,7 +2,8 @@ package com.dm.hbase.spark.datasource
 
 import java.util
 
-import org.apache.hadoop.hbase.HConstants
+import org.apache.hadoop.hbase.client.{Connection, ConnectionFactory}
+import org.apache.hadoop.hbase.{HBaseConfiguration, HConstants, TableName}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.sources.v2.DataSourceOptions
@@ -36,10 +37,25 @@ case class HbaseDataSourceReader private(options: DataSourceOptions,
   }
 
   override def planInputPartitions(): util.List[InputPartition[InternalRow]] = {
-    Seq[InputPartition[InternalRow]](HbaseInputPartition(Map(
-      HConstants.ZOOKEEPER_QUORUM -> options.get(HConstants.ZOOKEEPER_QUORUM).orElse("localhost"),
-      HConstants.ZOOKEEPER_CLIENT_PORT -> options.get(HConstants.ZOOKEEPER_CLIENT_PORT).orElse("2181")
-    ), name, rowkey, columns, requiredSchema, pushedFilters)).asJava
+    val zookeeperQuorum = options.get(HConstants.ZOOKEEPER_QUORUM).orElse("localhost")
+    val zookeeperClientPort = options.get(HConstants.ZOOKEEPER_CLIENT_PORT).orElse("2181")
+    val configuration = HBaseConfiguration.create
+    configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum)
+    configuration.set(HConstants.ZOOKEEPER_CLIENT_PORT, zookeeperClientPort)
+    val connection: Connection = ConnectionFactory.createConnection(configuration);
+    val admin = connection.getAdmin
+    try {
+      val regions = admin.getRegions(TableName.valueOf(name))
+        .asScala.map(region => Array(region.getStartKey, region.getEndKey))
+      admin.close()
+      regions.map(HbaseInputPartition(Map(
+        HConstants.ZOOKEEPER_QUORUM -> options.get(HConstants.ZOOKEEPER_QUORUM).orElse("localhost"),
+        HConstants.ZOOKEEPER_CLIENT_PORT -> options.get(HConstants.ZOOKEEPER_CLIENT_PORT).orElse("2181")
+      ), name, rowkey, columns, requiredSchema, pushedFilters, _).asInstanceOf[InputPartition[InternalRow]]).asJava
+    } finally {
+      admin.close()
+      connection.close()
+    }
   }
 
 
@@ -121,6 +137,8 @@ object HbaseDataSourceReader {
    */
   private def getDataType(ts: String): DataType = ts match {
     case "boolean" => BooleanType
+    case "char" => StringType
+    case "varchar" => StringType
     case "string" => StringType
     case "int" => IntegerType
     case "integer" => IntegerType
@@ -132,6 +150,7 @@ object HbaseDataSourceReader {
     case "double" => DoubleType
     case "float" => FloatType
     case "long" => LongType
+    case "bigint" => LongType
     case "short" => ShortType
     case "timestamp" => TimestampType
     case _ => throw new RuntimeException(s"Unsupported type $ts")

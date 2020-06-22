@@ -10,9 +10,10 @@ case class HbaseInputPartition(options: Map[String, String],
                                rowkey: String,
                                columns: Map[String, HBaseTableColumn],
                                requiredSchema: StructType,
-                               filters: Array[Filter]
+                               filters: Array[Filter],
+                               regions: Array[Array[Byte]]
                               ) extends InputPartition[InternalRow] {
   override def createPartitionReader(): InputPartitionReader[InternalRow] = {
-    HbaseInputPartitionReader(options, name, rowkey, columns, requiredSchema, filters)
+    HbaseInputPartitionReader(options, name, rowkey, columns, requiredSchema, filters, regions)
   }
 }

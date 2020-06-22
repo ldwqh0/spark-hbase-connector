@@ -15,6 +15,7 @@
     <hadoop.version>3.2.1</hadoop.version>
     <hbase.version>2.2.5</hbase.version>
     <spark.version>2.4.5</spark.version>
+    <jackson.version>2.11.0</jackson.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
   </properties>
@@ -54,7 +55,17 @@
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
-        <version>2.11.0</version>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-scala_2.12</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.dataformat</groupId>
+        <artifactId>jackson-dataformat-yaml</artifactId>
+        <version>${jackson.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -83,12 +94,15 @@
     <dependency>
       <groupId>com.fasterxml.jackson.module</groupId>
       <artifactId>jackson-module-scala_2.12</artifactId>
-      <version>2.11.0</version>
     </dependency>
     <dependency>
       <groupId>org.scala-lang.modules</groupId>
       <artifactId>scala-java8-compat_2.12</artifactId>
       <version>0.9.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
     </dependency>
     <dependency>
       <groupId>org.codehaus.janino</groupId>
@@ -177,12 +191,12 @@
     <repository>
       <id>nexus-releases</id>
       <name>Nexus Release Repository</name>
-      <url>http://182.151.211.173:8081/repository/maven-releases/</url>
+      <url>http://125.70.227.192:8081/repository/maven-releases/</url>
     </repository>
     <snapshotRepository>
       <id>nexus-snapshots</id>
       <name>Nexus Snapshot Repository</name>
-      <url>http://182.151.211.173:8081/repository/maven-snapshots/</url>
+      <url>http://125.70.227.192:8081/repository/maven-snapshots/</url>
     </snapshotRepository>
   </distributionManagement>
 </project>

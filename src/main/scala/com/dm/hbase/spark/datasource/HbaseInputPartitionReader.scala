@@ -5,7 +5,7 @@ import java.sql.{Date, Timestamp}
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.hbase.client._
 import org.apache.hadoop.hbase.filter.FilterList.Operator
-import org.apache.hadoop.hbase.filter.{NullComparator, Filter => _, _}
+import org.apache.hadoop.hbase.filter.{NullComparator, Filter => HbaseFilter, _}
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.hadoop.hbase.{CompareOperator, HBaseConfiguration, HConstants, TableName}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -32,7 +32,8 @@ case class HbaseInputPartitionReader(connection: Connection,
                                      rowkey: String,
                                      columns: Map[String, HBaseTableColumn],
                                      requiredSchema: StructType,
-                                     filters: Array[Filter]
+                                     filters: Array[Filter],
+                                     regions: Array[Array[Byte]]
                                     ) extends InputPartitionReader[InternalRow] {
 
   // 定义一个变量，用于处理处理的结果集
@@ -95,12 +96,19 @@ case class HbaseInputPartitionReader(connection: Connection,
   // 计算过滤器
   private def getScanner() = {
     val scan: Scan = new Scan()
+    if (regions.length == 2) {
+      scan.withStartRow(regions(0))
+      scan.withStopRow(regions(1))
+      println("尝试分区读取中-------------", Bytes.toString(regions(0)), Bytes.toString(regions(1)))
+    }
+    //    scan.withStartRow();
     val filter = new FilterList(filters.map(buildFilter(_)).filter(i => i != null && !i.isInstanceOf[Unit]).toList.asJava)
     scan.setFilter(filter)
+    //    scan.setFilter()
     connection.getTable(TableName.valueOf(name)).getScanner(scan)
   }
 
-  private def buildFilter(sparkFilter: Filter): org.apache.hadoop.hbase.filter.Filter = {
+  private def buildFilter(sparkFilter: Filter): HbaseFilter = {
     // 将字面值转换为对应的Hbase字节数组
     def toBytes(value: Any): Array[Byte] = value match {
       case v: Boolean => Bytes.toBytes(v)
@@ -124,12 +132,12 @@ case class HbaseInputPartitionReader(connection: Connection,
      * @param operator
      * @return
      */
-    def buildValueComparatorFilter(attribute: String, operator: CompareOperator, value: Any): org.apache.hadoop.hbase.filter.Filter = {
+    def buildValueComparatorFilter(attribute: String, operator: CompareOperator, value: Any): HbaseFilter = {
       builderByteArrayFilter(attribute, operator, new BinaryComparator(toBytes(value)))
     }
 
     // 构建filter
-    def builderByteArrayFilter(attribute: String, operator: CompareOperator, comparator: ByteArrayComparable): org.apache.hadoop.hbase.filter.Filter = {
+    def builderByteArrayFilter(attribute: String, operator: CompareOperator, comparator: ByteArrayComparable): HbaseFilter = {
       if (rowkey.equals(attribute)) {
         new RowFilter(operator, comparator)
       } else {
@@ -159,6 +167,8 @@ case class HbaseInputPartitionReader(connection: Connection,
     }
 
     sparkFilter match {
+
+      // TODO 如何针对rowkey查询进行优化
       case EqualTo(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.EQUAL, value)
       // column like '%value'
       case StringStartsWith(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new BinaryPrefixComparator(toBytes(value)))
@@ -195,7 +205,8 @@ object HbaseInputPartitionReader {
             rowkey: String,
             columns: Map[String, HBaseTableColumn],
             requiredSchema: StructType,
-            filters: Array[Filter]): HbaseInputPartitionReader = {
+            filters: Array[Filter],
+            regions: Array[Array[Byte]]): HbaseInputPartitionReader = {
     val configuration = HBaseConfiguration.create
     val zookeeperQuorum = options(HConstants.ZOOKEEPER_QUORUM)
     val zookeeperClientPort = options(HConstants.ZOOKEEPER_CLIENT_PORT)
@@ -206,6 +217,6 @@ object HbaseInputPartitionReader {
       configuration.set(HConstants.ZOOKEEPER_CLIENT_PORT, options(HConstants.ZOOKEEPER_CLIENT_PORT))
     }
     val cnn = ConnectionFactory.createConnection(configuration);
-    HbaseInputPartitionReader(cnn, name, rowkey, columns, requiredSchema, filters)
+    HbaseInputPartitionReader(cnn, name, rowkey, columns, requiredSchema, filters, regions)
   }
 }
