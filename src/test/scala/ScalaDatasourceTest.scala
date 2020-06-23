@@ -1,7 +1,7 @@
 import java.sql.Timestamp
 import java.time.ZonedDateTime
 
-import com.dm.hbase.spark.datasource.HbaseTable
+import com.dm.hbase.spark3.datasource.HbaseTableCatalog
 import org.apache.hadoop.hbase.HConstants
 import org.apache.spark.sql.{Row, SparkSession}
 
@@ -76,9 +76,9 @@ object ScalaDatasourceTest {
 
     // 测试hbase连接
     val a = session.sqlContext.read
-      .option(HbaseTable.catalog, catalog)
+      .option(HbaseTableCatalog.CATALOG, catalog)
       .option(HConstants.ZOOKEEPER_QUORUM, "dm105,dm106,dm107")
-      .format("com.dm.hbase.spark.datasource")
+      .format("com.dm.hbase.spark3.datasource")
       .load
     a.printSchema()
     a.createOrReplaceTempView("test")
@@ -87,10 +87,11 @@ object ScalaDatasourceTest {
     // to_timestamp 将字符串转化为日期时间格式，不会丢失时间信息
     val all = session.sql(
       """select id,name,alive,age,birthDateStr,birthDateTime,birthDate,height,b,c from test
-        |where id in (1,2,3,4,5) or name='people1'
+        |where id in (1,2,3,4,5) or name='people1000'
         |""".stripMargin)
     // 显示执行计划
     all.explain(true)
+    all.show()
     //    all.write.text("d:\\r.txt")
     //    all.write.jdbc()
     //    all.write.json("hdfs://ubuntu3:9000/test/result.json")
@@ -108,8 +109,9 @@ object ScalaDatasourceTest {
          |  "c":":${row(9)}"
          |}""".stripMargin))
     val count = session.sql("""select name from test""")
+    count.show()
 
     //    count.write.text("hdfs://ubuntu3:9000/test/result.txt")
-    count.foreach(v => println(v))
+    //    count.foreach(v => println(v))
   }
 }

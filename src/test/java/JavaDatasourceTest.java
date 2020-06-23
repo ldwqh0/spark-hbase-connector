@@ -1,4 +1,4 @@
-import com.dm.hbase.spark.datasource.HbaseTable;
+import com.dm.hbase.spark.datasource.HbaseTableCatalog;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.spark.sql.Dataset;
@@ -29,7 +29,7 @@ public class JavaDatasourceTest implements Serializable {
         // 测试hbase连接
         Dataset<Row> a = session.sqlContext()
             .read()
-            .option(HbaseTable.catalog(), catalog)
+            .option(HbaseTableCatalog.CATALOG(), catalog)
             .option(HConstants.ZOOKEEPER_QUORUM, "dm105,dm106,dm107")
             .format("com.dm.hbase.spark.datasource")
             .load();
