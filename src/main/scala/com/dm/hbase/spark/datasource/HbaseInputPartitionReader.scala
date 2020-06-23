@@ -56,13 +56,13 @@ case class HbaseInputPartitionReader(connection: Connection,
        * @return
        */
       def readValue[R >: Null](func: Array[Byte] => R): R = {
-        val columnFamily: String = field.metadata.getString(HbaseTable.columnFamily)
+        val columnFamily: String = field.metadata.getString(HbaseTableCatalog.COLUMN_FAMILY)
         // 如果列所在的列族是rowkey
-        if (HbaseTable.rowkey.equals(columnFamily)) {
+        if (HbaseTableCatalog.ROWKEY.equals(columnFamily)) {
           // 返回rowkey
           func(current.getRow)
         } else {
-          val column: String = field.metadata.getString(HbaseTable.column)
+          val column: String = field.metadata.getString(HbaseTableCatalog.COLUMN)
           val bytes = current.getValue(Bytes.toBytes(columnFamily), Bytes.toBytes(column))
           if (bytes == null) null else func(bytes)
         }

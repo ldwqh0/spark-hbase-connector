@@ -32,10 +32,10 @@ import com.fasterxml.jackson.module.scala.{DefaultScalaModule, ScalaObjectMapper
  * @param rowkey    rowkey所对应的列名称
  * @param columns   列定义
  */
-case class HbaseTable(@JsonProperty("table")
-                      tableName: HbaseTableName,
-                      rowkey: String,
-                      columns: Map[String, HBaseTableColumn]) {
+case class HbaseTableCatalog(@JsonProperty("table")
+                             tableName: HbaseTableName,
+                             rowkey: String,
+                             columns: Map[String, HBaseTableColumn]) {
   val name: String = s"${tableName.namespace}:${tableName.name}"
 
   //  def this(name: String, rowkey: String, columns: Map[String, HBaseTableColumn]) {
@@ -71,15 +71,16 @@ case class HBaseTableColumn(@JsonProperty("cf")
                             dataType: String) {
 }
 
-object HbaseTable {
-  val catalog: String = "catalog"
-  val rowkey: String = "rowkey"
-  val columnFamily: String = "columnFamily"
-  val column: String = "column"
-  val mapper = new ObjectMapper() with ScalaObjectMapper
+object HbaseTableCatalog {
+  val CATALOG: String = "catalog"
+  val ROWKEY: String = "rowkey"
+  val COLUMN_FAMILY: String = "columnFamily"
+  val COLUMN: String = "column"
+
+  private val mapper = new ObjectMapper() with ScalaObjectMapper
   mapper.registerModule(DefaultScalaModule)
 
-  def apply(str: String): HbaseTable = {
+  def apply(str: String): HbaseTableCatalog = {
     val catalog: Map[String, Any] = mapper.readValue[Map[String, Any]](str)
     val tableName = catalog("table") match {
       case tableName: String => HbaseTableName(tableName)
@@ -104,6 +105,6 @@ object HbaseTable {
         .map(v => v)
       case _ => throw new RuntimeException("error parse columns from catalog")
     }
-    HbaseTable(tableName, catalog("rowkey").asInstanceOf[String], columns)
+    HbaseTableCatalog(tableName, catalog("rowkey").asInstanceOf[String], columns)
   }
 }

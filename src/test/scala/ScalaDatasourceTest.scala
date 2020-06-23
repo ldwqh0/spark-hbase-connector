@@ -1,7 +1,7 @@
 import java.sql.Timestamp
 import java.time.ZonedDateTime
 
-import com.dm.hbase.spark.datasource.HbaseTable
+import com.dm.hbase.spark.datasource.HbaseTableCatalog
 import org.apache.hadoop.hbase.HConstants
 import org.apache.spark.sql.{Row, SparkSession}
 
@@ -76,7 +76,7 @@ object ScalaDatasourceTest {
 
     // 测试hbase连接
     val a = session.sqlContext.read
-      .option(HbaseTable.catalog, catalog)
+      .option(HbaseTableCatalog.CATALOG, catalog)
       .option(HConstants.ZOOKEEPER_QUORUM, "dm105,dm106,dm107")
       .format("com.dm.hbase.spark.datasource")
       .load

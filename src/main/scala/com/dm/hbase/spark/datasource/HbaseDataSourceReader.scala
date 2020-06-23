@@ -112,10 +112,10 @@ object HbaseDataSourceReader {
    */
   def apply(options: DataSourceOptions): HbaseDataSourceReader = {
     // 读取数据的结构定义
-    val tableCatalog = HbaseTable(options.get(HbaseTable.catalog).get())
+    val tableCatalog = HbaseTableCatalog(options.get(HbaseTableCatalog.CATALOG).get())
     val fields: Array[StructField] = tableCatalog.columns.map(columnEntry => {
       val (name, column) = columnEntry
-      val nullable = !HbaseTable.rowkey.equals(column.columnFamily)
+      val nullable = !HbaseTableCatalog.ROWKEY.equals(column.columnFamily)
       val metaBuilder = new MetadataBuilder()
       metaBuilder.putString("columnFamily", column.columnFamily).putString("column", column.column)
       StructField(name, getDataType(column.dataType), nullable, metaBuilder.build)
