@@ -1,4 +1,4 @@
-import com.dm.hbase.spark.datasource.HbaseTableCatalog;
+import com.dm.hbase.spark3.datasource.HbaseTableCatalog;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.spark.sql.Dataset;
