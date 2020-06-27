@@ -34,6 +34,23 @@ case class HbasePartitionReader(name: String,
 
   override def next(): Boolean = scannerIterator.hasNext
 
+  // 将字面值转换为对应的Hbase字节数组
+  implicit def toBytes(value: Any): Array[Byte] = value match {
+    case v: Boolean => Bytes.toBytes(v)
+    case v: Byte => Bytes.toBytes(v)
+    case v: Short => Bytes.toBytes(v)
+    case v: Int => Bytes.toBytes(v)
+    case v: Long => Bytes.toBytes(v)
+    case v: Float => Bytes.toBytes(v)
+    case v: Double => Bytes.toBytes(v)
+    case v: String => Bytes.toBytes(v)
+    case v: Date => Bytes.toBytes(v.getTime)
+    case v: Timestamp => Bytes.toBytes(v.getTime)
+    case v@_ => throw new RuntimeException(s"Unsupported value $v")
+  }
+
+  implicit def toLong(bytes: Array[Byte]): Long = Bytes.toLong(bytes)
+
   override def get(): InternalRow = {
     val current: Result = scannerIterator.next()
     InternalRow(requiredSchema.fields.map(field => {
@@ -54,7 +71,7 @@ case class HbasePartitionReader(name: String,
           func(current.getRow)
         } else {
           val column: String = field.metadata.getString(HbaseTableCatalog.COLUMN)
-          val bytes = current.getValue(Bytes.toBytes(columnFamily), Bytes.toBytes(column))
+          val bytes = current.getValue(columnFamily, column)
           if (bytes == null) null else func(bytes)
         }
       }
@@ -63,10 +80,10 @@ case class HbasePartitionReader(name: String,
         // case ArrayType => null;
         case DataTypes.BinaryType => readValue(v => v)
         case DataTypes.BooleanType => readValue(Bytes.toBoolean)
-        case DataTypes.ByteType => readValue(_ (0)) //待测试
-        // ase DataTypes.CalendarIntervalType => bytes; //TODO 这种类型不明白
+        case DataTypes.ByteType => readValue(v => v(0)) //待测试
+        // case DataTypes.CalendarIntervalType => bytes; //TODO 这种类型不明白
         // 从毫秒数获取日期
-        case DataTypes.DateType => readValue(v => DateTimeUtils.fromJavaDate(new Date(Bytes.toLong(v))))
+        case DataTypes.DateType => readValue(v => DateTimeUtils.fromJavaDate(new Date(v)))
         case DataTypes.ShortType => readValue(Bytes.toShort)
         case DataTypes.IntegerType => readValue(Bytes.toInt)
         case DataTypes.LongType => readValue(Bytes.toLong)
@@ -75,7 +92,7 @@ case class HbasePartitionReader(name: String,
         case DataTypes.DoubleType => readValue(Bytes.toDouble)
         case DataTypes.StringType => readValue(UTF8String.fromBytes)
         // 从毫秒数获取时间
-        case DataTypes.TimestampType => readValue(v => DateTimeUtils.fromMillis(Bytes.toLong(v))) //日期怎么处理
+        case DataTypes.TimestampType => readValue(DateTimeUtils.fromMillis(_)) //日期怎么处理
       }
     }): _*)
   }
@@ -85,20 +102,7 @@ case class HbasePartitionReader(name: String,
 
 
   private def buildFilter(sparkFilter: Filter): HbaseFilter = {
-    // 将字面值转换为对应的Hbase字节数组
-    def toBytes(value: Any): Array[Byte] = value match {
-      case v: Boolean => Bytes.toBytes(v)
-      case v: Byte => Bytes.toBytes(v)
-      case v: Short => Bytes.toBytes(v)
-      case v: Int => Bytes.toBytes(v)
-      case v: Long => Bytes.toBytes(v)
-      case v: Float => Bytes.toBytes(v)
-      case v: Double => Bytes.toBytes(v)
-      case v: String => Bytes.toBytes(v)
-      case v: Date => Bytes.toBytes(v.getTime)
-      case v: Timestamp => Bytes.toBytes(v.getTime)
-      case v@_ => throw new RuntimeException(s"Unsupported value $v")
-    }
+
 
     /**
      * 构建用值做比较的filter
@@ -109,7 +113,7 @@ case class HbasePartitionReader(name: String,
      * @return
      */
     def buildValueComparatorFilter(attribute: String, operator: CompareOperator, value: Any): HbaseFilter = {
-      builderByteArrayFilter(attribute, operator, new BinaryComparator(toBytes(value)))
+      builderByteArrayFilter(attribute, operator, new BinaryComparator(value))
     }
 
     // 构建filter
@@ -132,7 +136,7 @@ case class HbasePartitionReader(name: String,
       columns.get(attribute)
         .map(v => {
           val HBaseTableColumn(columnFamily, column, dataType) = v
-          val filter = new SingleColumnValueFilter(Bytes.toBytes(columnFamily), Bytes.toBytes(column), operator, comparator)
+          val filter = new SingleColumnValueFilter(columnFamily, column, operator, comparator)
           // 如果没有找到指定的列，不返回该行
           filter.setFilterIfMissing(true)
           filter
@@ -147,7 +151,7 @@ case class HbasePartitionReader(name: String,
       // TODO 如何针对rowkey查询进行优化
       case EqualTo(attribute, value) => buildValueComparatorFilter(attribute, CompareOperator.EQUAL, value)
       // column like '%value'
-      case StringStartsWith(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new BinaryPrefixComparator(toBytes(value)))
+      case StringStartsWith(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new BinaryPrefixComparator(value))
       // column like "%str%"
       case StringContains(attribute, value) => builderByteArrayFilter(attribute, CompareOperator.EQUAL, new SubstringComparator(value))
       // in (v1,v2,v3)

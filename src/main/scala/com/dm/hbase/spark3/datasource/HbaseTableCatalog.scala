@@ -33,8 +33,8 @@ case class HBaseTableColumn(@JsonProperty("cf")
 object HbaseTableName {
   def apply(name: String): HbaseTableName = {
     name.split(":").reverse match {
-      case Array(name) => HbaseTableName(name)
       case Array(name, namespace) => HbaseTableName(namespace, name)
+      case Array(name) => HbaseTableName(name)
     }
   }
 }

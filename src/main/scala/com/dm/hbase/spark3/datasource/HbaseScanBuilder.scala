@@ -52,9 +52,7 @@ case class HbaseScanBuilder(name: String,
   override def pushedFilters(): Array[Filter] = pushedFilterBuffer.toArray
 
   override def pruneColumns(requiredSchema: StructType): Unit = {
-    val fis = requiredSchema.map(requiredField => {
-      schema.find(field => field.name.equals(requiredField.name)).get
-    })
+    val fis = requiredSchema.map(requiredField => schema.find(_.name.equals(requiredField.name)).get)
     this.requiredSchema = StructType(fis)
   }
 }
